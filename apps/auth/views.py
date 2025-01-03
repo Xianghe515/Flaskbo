@@ -41,7 +41,8 @@ def signup():
             # GET 파라미터에 next 키가 존재하고, 값이 없는 경우 사용자의 일람 페이지로 리다이렉트
             next_ = request.args.get("next")
             if next_ is None or not next_.startswith("/"):
-                  next_ = url_for("crud.users")
+                  # 회원가입 완료 시 리다이렉트될 곳 -> detector.index
+                  next_ = url_for("detector.index")
                   return redirect(next_)
 
       return render_template("auth/signup.html", form=form)

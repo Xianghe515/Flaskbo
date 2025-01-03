@@ -45,3 +45,6 @@ class User(db.Model, UserMixin):
     @login_manager.user_loader
     def load_user(user_id):
         return User.query.get(user_id)
+    
+    # backref를 이용하여 relation 정보를 설정
+    user_images = db.relationship("UserImage", backref="user")
