@@ -1,0 +1,441 @@
+# 쳅터3 사용자 인증 
+ 인증 기능 
+ - 회원가입 기능
+ - 로그인 기능
+ - 로그아웃 기능
+
+================================
+# 앱에 인증기능 등록(blueprint)
+
+# 사전에 애플리케이션 디렉터리 구성... 
+   1) auth 디렉터리 생성
+   2) templates 디렉터리를 auth 안에 만들고, 
+   3) templates/auth 디렉터리를 생성
+# 동작을 위하여 필요한 파일 
+  apps/auth/views.py(blueprint)
+  apps/auth/__init__.py
+  apps/auth/forms.py   
+
+#1. apps/app.py 등록(auth 애플리케이션 등록)
+--- apps/app.py
+# 경로 작업
+# from pathlib import Path
+
+from flask import Flask
+
+# 마이그레이션 작업을 위해
+from flask_migrate import Migrate  # type: ignore
+
+# SQL작업을 위해
+from flask_sqlalchemy import SQLAlchemy
+
+# flask-wtf 모듈의 CSRFProtect import
+from flask_wtf.csrf import CSRFProtect  # type: ignore
+
+# config 모듈을 import
+from apps.config import config
+
+# SQLAlchemy 객체 생성
+db = SQLAlchemy()
+
+# CSRFProtect 객체 생성
+csrf = CSRFProtect()
+
+
+# create_app 함수 작성
+def create_app(config_key):
+    # 플라스크 인스턴스 생성
+    app = Flask(__name__)
+
+    # app에 config 설정
+    app.config.from_object(config[config_key])
+    # app.config.from_envvar("APPLICATION_SETTINGS")
+    # app.config.from_pyfile("envconfig.py")
+    # app.config.from_mapping(
+    #     SECRET_KEY="VXNA6hHwn5sIuPQpZLxK",
+    #     SQLALCHEMY_DATABASE_URI=f"sqlite:///{Path(__file__).parent / 'local.sqlite'}",
+    #     SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    #     # SQL 콘솔 로그에 출력
+    #     SQLALCHEMY_ECHO=True,
+    #     WTF_CSRF_SECRET_KEY="El1oD921KMdGKONsydDa",
+    # )
+
+    # csrf 앱 연계
+    csrf.init_app(app)
+
+    # SQLAlchemy와 앱 연계
+    db.init_app(app)
+    # Migrate와 앱 연계
+    Migrate(app, db)
+
+    # CRUD패키지로 부터 views 모듈을 import 한다.
+    # views.py 모듈은 @app.route()와 같은 맵핑 기능을 가진 모듈
+    from apps.crud import views as crud_views  # as 이후 별칭 선언
+
+    # register_blueprint() 사용해 views(crud_views) blueprint에 등록
+    # 엔드포인트 앞에 crud가 붙게 됨.
+    app.register_blueprint(crud_views.crud, url_prefix="/crud")
+
+    # AUTH 패키지로 부터 views 모듈을 import
+    from apps.auth import views as auth_views
+
+    # register_blueprint()로 blueprint 등록
+    app.register_blueprint(auth_views.auth, url_prefix="/auth")
+
+    return app
+--- 
+
+# 사용자 인증 기능 엔드포인트 만들기(apps/auth/views.py)
+--- apps/auth/views.py
+from flask import Blueprint, render_template
+
+# Blueprint를 사용하여 auth를 생성
+auth = Blueprint(
+    "auth",
+    __name__,
+    static_folder="static",
+    template_folder="templates",
+)
+
+# 테스트를 위한 엔드포인트
+@auth.route("/")
+def index():
+    return render_template("auth/index.html")
+---
+
+#3. 인증 기능 확인을 위한 템플릿 만들기
+공통화를 이용한 템플릿 작성. base.html(공통화), index.html(테스트)
+--- /apps/auth/templates/auth/base.html
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>{% block title %}{% endblock %}</title>
+  </head>
+  <body>
+    <!-- content라는 블럭의 위치 지정 -->
+    {% block content %} {% endblock %}
+  </body>
+</html>
+
+---
+
+--- apps/auth/templates/auth/index.html
+{% extends "auth/base.html" %} 
+{% block title %}인증 페이지{% endblock %}
+{% block content %}인증 페이지 표시 확인{% endblock %}
+---
+
+# 확인!!!
+(flask run)
+http://127.0.0.1:5000/auth
+
+
+#  - 회원가입 기능 만들기
+1. 회원 인증 처리 패키지 : flask-login 설치 및 연계
+2. 회원가입 기능의 폼 클래스를 작성
+3. User 모델을 갱신
+4. 회원 가입 기능의 엔드포인트 작성
+5. 회원 가입 기능의 템플릿 작성
+6. crud 앱을 로그인 필수로 변경... flask-login 기능 중 하나를 이용. 
+7. 동작 확인
+
+#1. 회원 인증 처리 패키지 : flask-login 설치 및 연계
+플라스크에서 인증 기능을 생성하기 위한 flask-login 설치
+[설치]
+ pip install flask-login
+[연계] apps/app.py 에서 작업
+--- apps/app.py
+# 경로 작업
+# from pathlib import Path
+
+from flask import Flask
+
+# 마이그레이션 작업을 위해
+from flask_migrate import Migrate  # type: ignore
+
+# SQL작업을 위해
+from flask_sqlalchemy import SQLAlchemy
+
+# flask-wtf 모듈의 CSRFProtect import
+from flask_wtf.csrf import CSRFProtect  # type: ignore
+
+# config 모듈을 import
+from apps.config import config
+
+# flask-login에 있는 LoginManger를 import(*)
+from flask_login import LoginManager
+
+# SQLAlchemy 객체 생성
+db = SQLAlchemy()
+
+# CSRFProtect 객체 생성
+csrf = CSRFProtect()
+
+# LoginManager 객체 생성(*)
+login_manager = LoginManager()
+# login_view 속성에 미로그인시 리다이렉트하는 엔드포인트를 지정
+login_manager.login_view = "auth.signup"
+# login_message 속성 : 로그인시 표시할 메시지를 지정. 현재는 표시할 내용없어서 ""
+# login_message는 기본값으로 설정되어 있어요. 영어로 값이 이미 존재함. 
+login_manager.login_message = ""
+
+# create_app 함수 작성
+def create_app(config_key):
+    # 플라스크 인스턴스 생성
+    app = Flask(__name__)
+
+    # app에 config 설정
+    app.config.from_object(config[config_key])
+    # app.config.from_envvar("APPLICATION_SETTINGS")
+    # app.config.from_pyfile("envconfig.py")
+    # app.config.from_mapping(
+    #     SECRET_KEY="VXNA6hHwn5sIuPQpZLxK",
+    #     SQLALCHEMY_DATABASE_URI=f"sqlite:///{Path(__file__).parent / 'local.sqlite'}",
+    #     SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    #     # SQL 콘솔 로그에 출력
+    #     SQLALCHEMY_ECHO=True,
+    #     WTF_CSRF_SECRET_KEY="El1oD921KMdGKONsydDa",
+    # )
+
+    # csrf 앱 연계
+    csrf.init_app(app)
+
+    # SQLAlchemy와 앱 연계
+    db.init_app(app)
+    # Migrate와 앱 연계
+    Migrate(app, db)
+    
+    # login_manager를 app과 연계(*)
+    login_manager.init_app(app)
+
+    # CRUD패키지로 부터 views 모듈을 import 한다.
+    # views.py 모듈은 @app.route()와 같은 맵핑 기능을 가진 모듈
+    from apps.crud import views as crud_views  # as 이후 별칭 선언
+
+    # register_blueprint() 사용해 views(crud_views) blueprint에 등록
+    # 엔드포인트 앞에 crud가 붙게 됨.
+    app.register_blueprint(crud_views.crud, url_prefix="/crud")
+
+    # AUTH 패키지로 부터 views 모듈을 import
+    from apps.auth import views as auth_views
+
+    # register_blueprint()로 blueprint 등록
+    app.register_blueprint(auth_views.auth, url_prefix="/auth")
+
+    return app
+
+---
+
+#2. 회원가입 기능의 폼 클래스를 작성(apps/auth/forms.py)
+--- apps/auth/forms.py
+from flask_wtf import FlaskForm
+from wtforms import PasswordField, StringField, SubmitField
+from wtforms.validators import DataRequired, Email, Length
+
+
+class SignUpForm(FlaskForm):
+    username = StringField(
+        "사용자명",
+        validators=[
+            DataRequired("사용자명은 필수 입니다. "),
+            Length(2, 30, "2글자 이상 30글자 이내로 작성해 주세요. "),
+        ],
+    )
+
+    email = StringField(
+        "메일 주소",
+        validators=[
+            DataRequired("메일 주소는 필수 입니다. "),
+            Email("메일 주소 형식으로 입력해 주세요. "),
+        ],
+    )
+
+    password = PasswordField(
+        "비밀번호", validators=[DataRequired("비밀번호는 필수입니다. ")]
+    )
+    submit = SubmitField("신규 등록")
+
+---
+
+#3. User 모델을 갱신처리(apps/crud/models.py)
+ : flask-login 확장 로그인 기능을 이용하려면, 정의할 필요가 있는 정보 (p.151)
+ - is_authenticated : 로그인 정보를 가짐. 로그인시에는 True, 로그인 아니면 False
+ - is_active : 사용자 계정 활성화. 활성화(True), 비활성화(False)
+ - is_anonymous : 익명 계정 사용. 로그인시(False), 비로그인시(True)
+ - get_id : 로그인 사용자의  ID를 얻을 수 있는 프로퍼티
+ 가 존재합니다. 이를 설정하기 위해서 flask-login에서는 UserMixin 클래스를 가지고 있습니다. 
+
+--- apps/crud/models.py
+# 날짜 작업을 위해서 사용.
+from datetime import datetime
+
+# password_hash 처리를 위한 모듈 import, check_password_hash 추가
+from werkzeug.security import generate_password_hash, check_password_hash
+
+# apps.app 모듈에서 db import, 추가 import login_manager
+from apps.app import db, login_manager
+
+# flask_login내에 UserMixin import
+from flask_login import UserMixin
+
+
+# db.Model을 상속한 User 클래스 상속, 더하여 UserMixin 상속
+class User(db.Model, UserMixin):
+    # 테이블 이름
+    __tablename__ = "users"
+    # 컬럼 정의
+    id = db.Column(db.Integer, primary_key=True)  # primary_key 속성 부여
+    username = db.Column(db.String, index=True)  # index 색인
+    email = db.Column(db.String, index=True, unique=True)  # unique, index  설정
+    password_hash = db.Column(db.String)
+    create_at = db.Column(db.DateTime, default=datetime.now)  # default는 기본값
+    update_at = db.Column(
+        db.DateTime, default=datetime.now, onupdate=datetime.now
+    )  # onupdate 업데이트시
+
+    # 비밀번호를 설정하기 위한 프로퍼티
+    @property
+    def password(self):
+        raise AttributeError("읽어 들일 수 없음")
+
+    # 비밀번호 설정을 위한 setter
+    @password.setter
+    def password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    # 비밀번호 체크(패스워드 확인)
+    def verify_password(self, password):
+        return check_password_hash(self.password_hash, password)
+    
+    # 이메일 주소 중복 체크
+    def is_duplicate_email(self):
+        return User.query.filter_by(email=self.email).first()
+
+# 로그인하고 있는 사용자 정보를 얻는 함수를 작성
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(user_id)
+
+---
+
+#4. 회원 가입 기능의 엔드포인트 작성(apps/auth/views.py)
+회원 가입을 위한 엔드포인트 작성
+--- apps/auth/views.py
+# redirect, url_for, request, flash 추가
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+
+# 등록 정보를 세션에 공유
+from flask_login import login_user
+
+# db작업을 위한 db 객체 import
+from apps.app import db
+
+# 폼 클래스 import
+from apps.auth.forms import SignUpForm
+
+# 사용자 객체 정보를 위한 정보 User import
+from apps.crud.models import User
+
+# Blueprint를 사용하여 auth를 생성
+auth = Blueprint(
+    "auth",
+    __name__,
+    static_folder="static",
+    template_folder="templates",
+)
+
+
+# 테스트를 위한 엔드포인트
+@auth.route("/")
+def index():
+    return render_template("auth/index.html")
+
+
+# 회원가입을 위한 엔드포인트
+@auth.route("/signup", methods=["GET", "POST"])
+def signup():
+    # SignUpForm 객체 생성
+    form = SignUpForm()
+    if form.validate_on_submit():
+        user = User(
+            username=form.username.data,
+            email=form.email.data,
+            password=form.password.data,
+        )
+
+        # 이메일 중복 체크 : 중복시 GET으로 signup으로 전달
+        if user.is_duplicate_email():
+            flash("지정 이메일 주소는 이미 등록되어 있습니다.")
+            return redirect(url_for("auth.signup"))
+
+        # DB등록
+        db.session.add(user)
+        db.session.commit()
+
+        # 사용자 정보를 세션에 저장
+        login_user(user)
+        # GET 파라미터에 next키가 존재하고, 값이 없는 경우 사용자의 일람 페이지로 리다이렉트
+        # GET 파라미터 next에는 다음으로 이동할 경로 정보를 담는다.
+        next_ = request.args.get("next")
+        # next가 비어 있거나, "/"로 시작하지 않는 경우 -> 상대경로 접근X.
+        if next_ is None or not next_.startswith("/"):
+            # next의 값을 엔드포인트 crud.users로 지정
+            next_ = url_for("crud.users")
+        # redirect
+        return redirect(next_)
+    return render_template("auth/signup.html", form=form)
+
+---
+
+#5. 회원 가입 기능의 템플릿 작성(apps/auth/templates/auth/signup.html)
+--- apps/auth/templates/auth/signup.html
+{% extends "auth/base.html" %} {% block title %}사용자 신규 등록{% endblock %}
+{% block content %}
+<h2>사용자 신규 등록</h2>
+
+<form
+  action="{{ url_for('auth.signup', next=request.args.get('next')) }}"
+  method="POST"
+  novalidate="novalidate"
+>
+  {% for message in get_flashed_messages() %}
+  <p style="color: red">{{ message }}</p>
+  {% endfor %} {{ form.csrf_token }}
+  <p>
+    {{ form.username.label }} {{ form.username(size=30, placeholder="사용자명")
+    }}
+  </p>
+  {% for error in form.username.errors %}
+  <span style="color: red">{{ error }}</span>
+  {% endfor %}
+
+  <p>{{ form.email.label }} {{ form.email(placeholder="메일 주소") }}</p>
+  {% for error in form.email.errors %}
+  <span style="color: red">{{ error }}</span>
+  {% endfor %}
+
+  <p>{{ form.password.label }} {{ form.password(placeholder="비밀번호") }}</p>
+  {% for error in form.password.errors %}
+  <span style="color: red">{{ error }}</span>
+  {% endfor %}
+
+  <p>{{ form.submit() }}</p>
+</form>
+
+{% endblock %}
+---
+
+#6. crud 앱을 로그인 필수로 변경... flask-login 기능 중 하나를 이용. 
+
+
+
+
+
+
+
+
+
+
+
+

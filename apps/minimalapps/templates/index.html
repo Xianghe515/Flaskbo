@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ko">
+      <head>
+            <meta charset="UTF-8">
+            {% extends "base.html" %}
+            {% block title %}Name Template{% endblock %}
+
+            {% block content %}
+            {% if data["out"] %}
+            <h1 class="name">Name: {{ data["name"] }}</h1>
+            <h2>Age: {{ data["age"] }}</h2>
+            {% else %}
+            <h3>값을 출력하지 않습니다.</h3>
+            {% endif %}      
+            
+            <h2>for문 적용</h2>
+            <ul>
+                  {% for user in datas %}
+                  <li><a href="{{ user['url'] }}">{{ user['name'] }}</a></li>
+                  {% endfor %}
+            </ul>
+            {% endblock %}
+</html>

@@ -1,0 +1,440 @@
+# 데이터베이스를 이용한 CRUD 앱 만들기
+
+users테이블에 CRUD - Create, Read, Update, Delete
+--- 
+엔드 포인트 	Method	 	Role
+crud.create_user	GET, POST	/crud/users/new
+crud.users		GET		/crud/users
+crud.edit_user	GET, POST	/crud/users/<user_uuid>
+crud.delete_user	POST		/crud/users/<user_uuid>/delete
+---
+
+# 폼의 확장 기능 이용 : flask-wtf 모듈 이용!
+ 해당 모듈은 유형성 검증. CSRF에 대처하기 위한 플라스크 확장!
+ - HTML을 쉽고 간편하게 작성할 수 있다. 
+ - 폼의 유효성 검증을 간단히 할 수 있다.
+ - CSRF에 간단히 대처할 수 있다. 
+
+모듈 설치 : flask-wtf
+(venv) PS D:\Flaskbook> pip install flask-wtf
+(venv) PS D:\Flaskbook> pip list | findstr Flask
+Flask              3.1.0
+Flask-DebugToolbar 0.16.0
+Flask-Mail         0.10.0
+Flask-Migrate      4.0.7
+Flask-SQLAlchemy   3.1.1
+Flask-WTF          1.2.2(*)
+
+# 설정 적용 : 각 폼 사용과 관련 모듈, apps/app.py - CSRF 방지를 위한 설정.
+
+apps/app.py - CSRF 방지를 위한 설정
+---apps/app.py
+# 경로 작업
+from pathlib import Path
+
+from flask import Flask
+
+# 마이그레이션 작업을 위해
+from flask_migrate import Migrate
+
+# SQL작업을 위해
+from flask_sqlalchemy import SQLAlchemy
+
+# flask-wtf 모듈의 CSRFProtect import
+from flask_wtf.csrf import CSRFProtect
+
+
+# SQLAlchemy 객체 생성
+db = SQLAlchemy()
+
+# CSRFProtect 객체 생성
+csrf = CSRFProtect()
+
+# create_app 함수 작성
+def create_app():
+    # 플라스크 인스턴스 생성
+    app = Flask(__name__)
+
+    # app에 config 설정
+    app.config.from_mapping(
+        SECRET_KEY="VXNA6hHwn5sIuPQpZLxK",
+        SQLALCHEMY_DATABASE_URI=f"sqlite:///{Path(__file__).parent / 'local.sqlite'}",
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        # SQL 콘솔 로그에 출력
+        SQLALCHEMY_ECHO=True,
+        WTF_CSRF_SECRET_KEY="El1oD921KMdGKONsydDa",  # CSRF 공격 방지를 위한 토큰 생성 키값.
+    )
+    
+    # csrf 앱 연계
+    csrf.init_app(app)
+
+    # SQLAlchemy와 앱 연계
+    db.init_app(app)
+    # Migrate와 앱 연계
+    Migrate(app, db)
+
+    # CRUD패키지로 부터 views 모듈을 import 한다.
+    # views.py 모듈은 @app.route()와 같은 맵핑 기능을 가진 모듈
+    from apps.crud import views as crud_views  # as 이후 별칭 선언
+
+    # register_blueprint() 사용해 views(crud_views) blueprint에 등록
+    # 엔드포인트 앞에 crud가 붙게 됨.
+    app.register_blueprint(crud_views.crud, url_prefix="/crud")
+
+    return app
+---
+
+# 사용자 신규 작성(crud.create_user)
+ 1) 사용자 신규 작성 갱신 폼 클래스를 작성 ( flask-wtf를 이용한 폼 생성)
+ 2) 사용자 신규 작성 화면 엔드포인트 만들기(apps/crud/views.py)
+ 3) 사용자 신규 작성 화면 템플릿 만들기(apps/crud/templates/crud/create.html)
+ - 동작 확인
+
+=========================================
+#1 사용자 신규 작성 갱신 폼 클래스 작성
+  1)입력 값 검증
+  2)HTML 간결하게 표현
+  3)검증 누락 방지할 수 있음
+
+apps/crud/forms.py 를 생성하고, 위에 사용자 신규 등록-갱신용 폼 클래스 작성
+--- apps/crud/forms.py
+from flask_wtf import FlaskForm
+from wtforms import PasswordField, StringField, SubmitField
+from wtforms.validators import DataRequired, Email, Length
+
+
+# 사용자 신규 작성과 사용자 편집 폼 클래스
+class UserForm(FlaskForm):
+    # 사용자 폼의 username 속성의 라벨과 검증 설정
+    username = StringField(
+        "사용자명",
+        validators=[
+            DataRequired(message="사용자명은 필수입니다."),
+            Length(min=2, max=30, message="최소 2글자부터 30문자 이내로 입력하세요"),
+        ],
+    )
+
+    # email 속성의 레이블과 검증 설정
+    email = StringField(
+        "메일 주소",
+        validators=[
+            DataRequired(message="메일 주소는 필수입니다."),
+            Email(message="메일 주소의 형식으로 입력해 주세요."),
+        ],
+    )
+
+    # 사용자 폼의 password 속성의 레이블과 검증 설정
+    password = PasswordField(
+        "비밀 번호",
+        validators=[DataRequired(message="비밀 번호는 필수 입니다.")],
+    )
+
+    # 사용자 폼의 submit의 문자를 설정
+    submit = SubmitField("신규 등록")
+
+---
+
+p. 119 - WTForms의 대표적인 HTML 필드, WTForms 유효성 검증
+
+
+# 2. 사용자 신규 작성 화면 엔드포인트 만들기(apps/crud/views.py)
+---views.py
+# db를 import
+from flask import Blueprint, redirect, render_template, url_for
+
+from apps.app import db
+
+# 만들둔 Form 클래스를 import
+from apps.crud.forms import UserForm
+
+# User 클래스를 import
+from apps.crud.models import User
+
+# Blueprint 객체 생성
+crud = Blueprint(
+    "crud",
+    __name__,
+    static_folder="static",
+    template_folder="templates",
+)
+
+
+# 맵핑 정보 생성
+@crud.route("/")
+def index():
+    return render_template("crud/index.html")
+
+
+# 사용자 신규 등록을 위한 엔드포인트 작성
+@crud.route("/users/new", methods=["GET", "POST"])
+def create_user():
+    # UserForm 클래스를 인스턴스화
+    form = UserForm()
+    if form.validate_on_submit():  # submit 클릭시 검증에 문제가 없는 경우.
+        # 사용자 정보 생성
+        user = User(
+            username=form.username.data,
+            email=form.email.data,
+            password=form.password.data,
+        )
+
+        # DB작업으로 사용자를 추가하고 커밋
+        db.session.add(user)
+        db.session.commit()
+
+        # 사용자 일람 화면으로 리다이렉트
+        return redirect(url_for("crud.users"))
+    return render_template("crud/create.html", form=form)
+
+
+# SQL 테스트를 위한 endpoint 작성!
+@crud.route("/sql")
+def sql():
+    # group by('컬럼명') : 컬럼의 내용을 그룹의 묶어줌
+    ... 생략 ...
+    return "콘솔에서 확인해 주세요."
+
+---
+
+#3. 사용자 신규 작성 화면 템플릿 만들기(apps/crud/templates/crud/create.html)
+---create.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>사용자 신규 작성</title>
+  </head>
+  <body>
+    <h2>사용자 신규 작성</h2>
+    <form
+      action="{{ url_for('crud.create_user') }}"
+      method="POST"
+      novalidate="novalidate"
+    >
+      {{ form.csrf_token }}
+      <p>
+        {{ form.username.label }} {{ form.username(placeholder="사용자명") }}
+      </p>
+      {% for error in form.username.errors %}
+      <span style="color: red">{{ error }}</span>
+      {% endfor %}
+
+      <p>{{ form.email.label }} {{ form.email(placeholder="메일 주소") }}</p>
+      {% for error in form.email.errors %}
+      <span style="color: red">{{ error }}</span>
+      {% endfor %}
+
+      <p>
+        {{ form.password.label }} {{ form.password(placeholder="비밀번호") }}
+      </p>
+      {% for error in form.password.errors %}
+      <span style="color: red">{{ error }}</span>
+      {% endfor %}
+
+      <p>{{ form.submit() }}</p>
+    </form>
+  </body>
+</html>
+
+---
+
+# 사용자 일람 표시(crud.users)
+: users  테이블에 있는 정보를 노출
+ 1) 사용자 일람 화면의 엔드포인트 작성
+ 2) 사용자 일람 화면의 템플릿 작성
+ 3) 스타일 시트를 이용하여 작성
+ 4) 확인
+
+#1. 사용자 일람 화면 엔드포인트 작성(apps/crud/views.py)
+--- apps/crud/views.py
+
+... 생략 ... 
+
+# 사용자 일람을 위한 엔드포인트 작업
+@crud.route("/users")
+def users():
+    """사용자 일람을 얻는 함수"""
+    # users = db.session.query(User).all()
+    users = User.query.all()
+    return render_template("crud/index.html", users=users)
+
+... 생략 ...
+
+---
+
+# 2. 사용자 일람 화면의 템플릿 작성("apps/crud/templates/crud/index.html")
+--- index.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>사용자의 일람</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('crud.static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <h2>사용자의 일람</h2>
+
+    <a href="{{ url_for('crud.create_user') }}">사용자 신규 작성</a>
+    <table>
+      <tr>
+        <th>사용자 ID</th>
+        <th>사용자 이름</th>
+        <th>메일 주소</th>
+      </tr>
+      {% for user in users %}
+      <tr>
+        <td>{{ user.id }}</td>
+        <td>{{ user.username }}</td>
+        <td>{{ user.email }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>
+---
+
+#3. 스타일 시트를 이용하여 작성(apps/crud/static/style.css)
+--- style.css
+.crud {
+  font-style: italic;
+  color: brown;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+table,
+th,
+td {
+  border: 1px solid #ccc;
+}
+
+---
+
+
+# 사용자 편집하기(수정)
+ 1) 사용자 편집 엔드포인트 작성
+ 2) 사용자 편집 템플릿 작성
+ 3) 동작 확인
+
+#1. 사용자 편집 엔드포인트 작성(apps/crud/views.py)
+---views.py
+... 생략 ... 
+
+# 사용자 편집을 위한 엔드포인트 작업
+@crud.route("/users/<user_id>", methods=["GET","POST"])
+def edit_user(user_id):
+    form = UserForm()
+    
+    # User 모델을 이용하여 사용자를 취득
+    user = User.query.filter_by(id=user_id).first()
+    
+    # form으로부터 제출된 경우는 사용자를 갱신하여 사용자의 일람 화면으로 리다이렉트
+    if form.validate_on_submit():   # post 메서드로 수정 정보가 들어온 경우
+        # 수정 내용을 적용
+        user.username = form.username.data
+        user.email = form.email.data
+        user.password = form.password.data
+        # DB에 적용
+        db.session.add(user)  # primary_key의 값이 있는 경우 수정, 없으면 생성
+        db.session.commit()
+        return redirect(url_for('crud.users'))   # 수정 완료. 일람으로 이동
+    
+    # GET으로 접근한 경우 HTML을 반환
+    return render_template("crud/edit.html", user=user, form=form)
+
+... 생략 ... 
+---
+
+#2. 사용자 편집 템플릿 작성(apps/crud/templates/crud/edit.html)
+--- edit.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>사용자의 편집</title>
+  </head>
+  <body>
+    <h2>사용자의 편집</h2>
+    <form
+      action="{{ url_for('crud.edit_user', user_id=user.id) }}"
+      method="POST"
+      novalidate="novalidate"
+    >
+      {{ form.csrf_token }}
+      <p>
+        {{ form.username.label }} {{
+        form.username(placeholder="사용자명",value=user.username) }}
+      </p>
+      {% for error in form.username.errors %}
+      <span style="color: red">{{ error }}</span>
+      {% endfor %}
+
+      <p>
+        {{ form.email.label }} {{ form.email(placeholder="메일
+        주소",value=user.email) }}
+      </p>
+      {% for error in form.email.errors %}
+      <span style="color: red">{{ error }}</span>
+      {% endfor %}
+
+      <p>
+        {{ form.password.label }} {{ form.password(placeholder="비밀번호") }}
+      </p>
+      {% for error in form.password.errors %}
+      <span style="color: red">{{ error }}</span>
+      {% endfor %}
+
+      <p>{{ form.submit(value='갱신') }}</p>
+    </form>
+  </body>
+</html>
+
+--- 
+
+편집화면으로 들어가게 하기 위해서 index.html 수정
+--- index.html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>사용자의 일람</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('crud.static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <h2>사용자의 일람</h2>
+
+    <a href="{{ url_for('crud.create_user') }}">사용자 신규 작성</a>
+    <table>
+      <tr>
+        <th>사용자 ID</th>
+        <th>사용자 이름</th>
+        <th>메일 주소</th>
+      </tr>
+      {% for user in users %}
+      <tr>
+        <td>
+          <a href="{{ url_for('crud.edit_user', user_id=user.id) }}">
+          {{ user.id }}
+          </a>
+        </td>
+        <td>{{ user.username }}</td>
+        <td>{{ user.email }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </body>
+</html>
+
+---
+
+
+
+

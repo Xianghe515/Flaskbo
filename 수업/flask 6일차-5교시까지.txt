@@ -1,0 +1,244 @@
+# 데이터베이스 조작(2.4)
+
+대상 : 데이터베이스에서 데이터를 처리할 대상. => Model
+대상을 생성한 다음에 Migration 작업을 진행...
+
+[ 정리 ]==========================
+  1) 모델 생성
+  2) 마이그레이션 작업 진행
+
+-----------------------------------------------------
+이후에 데이터 조작하고 결과 확인....
+===============================
+
+1) 모델 생성(apps/crud/models.py)
+ 이름(db) : users
+    users에 속한 데이터를 정의
+    - id (user_id 가 아님) : 데이터를 구분한 고유값. 중복X, 값이 반드시 존재해야 함
+    - username : 이름 정보
+    - email : 이메일 정보. 이메일은 중복X
+    - password_hash : 패스워드. hash값을 저장. 
+    - 생성 날짜(create_at) : 날짜
+    - 수정 날짜(update_at) : 날짜
+
+--- models.py
+# 날짜 작업을 위해서 사용.
+from datetime import datetime
+
+# password_hash 처리를 위한 모듈 import
+from werkzeug.security import generate_password_hash
+
+# apps.app 모듈에서 db import
+from apps.app import db
+
+
+# db.Model을 상속한 User 클래스 상속
+class User(db.Model):
+    # 테이블 이름
+    __tablename__ = "users"
+    # 컬럼 정의
+    id = db.Column(db.Integer, primary_key=True)  # primary_key 속성 부여
+    username = db.Column(db.String, index=True)  # index 색인
+    email = db.Column(db.String, index=True, unique=True)  # unique, index  설정
+    password_hash = db.Column(db.String)
+    create_at = db.Column(db.DateTime, default=datetime.now)  # default는 기본값
+    update_at = db.Column(
+        db.DateTime, default=datetime.now, onupdate=datetime.now
+    )  # onupdate 업데이트시
+
+    # 비밀번호를 설정하기 위한 프로퍼티
+    @property
+    def password(self):
+        raise AttributeError("읽어 들일 수 없음")
+
+    # 비밀번호 설정을 위한 setter
+    @password.setter
+    def password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+---
+===
+
+p.103 - 104 
+모델의 대표적인 컬럼 정의와 오셥션 정의 확인해주세요.... 
+
+===
+*** 작성된 Model을 import할 수 있게 선언
+apps/crud/__init__.py  파일을 생성 후 적용
+[내용]
+--- __init__.py
+import apps.crud.models
+---
+***
+
+ 2) 마이그레이션 작업 진행
+ : 선언된 모델을 통해서 데이터베이스를 초기화하고, 마이그레이션 파일을 생성. 
+ 마이그레이션 파일은 설계서와 같다. 마이그레이션 파일을 실행하면 작성된 내용이 데이터베이스 적용 
+
+  1단계 : 데이터베이스 초기화
+    명령어 : flask db init
+===============================
+(venv) PS D:\Flaskbook> flask db init
+Creating directory 'D:\\Flaskbook\\migrations' ...  done
+Creating directory 'D:\\Flaskbook\\migrations\\versions' ...  done
+Generating D:\Flaskbook\migrations\alembic.ini ...  done
+Generating D:\Flaskbook\migrations\env.py ...  done     
+Generating D:\Flaskbook\migrations\README ...  done
+Generating D:\Flaskbook\migrations\script.py.mako ...  done
+Please edit configuration/connection/logging settings in 'D:\\Flaskbook\\migrations\\alembic.ini' before proceeding.
+(venv) PS D:\Flaskbook> 
+===============================
+
+  2단계 : 마이그레이션 파일 생성
+    명령어 :  flask db migrate
+
+===============================
+(venv) PS D:\Flaskbook> flask db migrate
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.autogenerate.compare] Detected added table 'users'
+INFO  [alembic.autogenerate.compare] Detected added index ''ix_users_email'' on '('email',)'      
+INFO  [alembic.autogenerate.compare] Detected added index ''ix_users_username'' on '('username',)'
+Generating D:\Flaskbook\migrations\versions\b05459bca72c_.py ...  done
+===============================
+
+  3단계 : 마이그레이션 적용
+    명령어 : flask db upgrade
+===============================
+(venv) PS D:\Flaskbook> flask db upgrade
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> b05459bca72c, empty message
+(venv) PS D:\Flaskbook> 
+===============================
+
+## flask db downgrade : 마이그레이트 데이터베이스 적용 전상태로 되돌리는 명령... 
+===============================
+VSCODE : 확장에서 sqlite  => "SQLITE" 확장 팩 설치
+
+local.sqlite 파일 선택 후 우클릭 "open database" 선택
+하단 SQLITE EXPORER 를 클릭하여 DB정보 확인
+
+
+# SQLAlchemy를 사용한 기본적인 데이터 조작
+
+[사전 설정]
+ SQLAlchemy의 실행하기전 SQL을 콘솔에 출력하는 설정... 
+ apps.app.py에 config 설정을 추가  SQLALCHEMY_ECHO=True로 설정
+
+---
+   ... 생략 ... 
+
+    # app에 config 설정
+    app.config.from_mapping(
+        SECRET_KEY="VXNA6hHwn5sIuPQpZLxK",
+        SQLALCHEMY_DATABASE_URI=f"sqlite:///{Path(__file__).parent / 'local.sqlite'}",
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        # SQL 콘솔 로그에 출력
+        SQLALCHEMY_ECHO=True,
+    )
+
+   ... 생략 ... 
+---
+
+SQLAlchemy를 사용하여 SQL 실행하는 방법 크게 2가지
+ 1. query filter : 주로 검색 조건을 좁히거나 정렬하기 위해서 이용
+
+ 2. executer : SQL 실행하고, 결과를 취득하기 위해서 사용. 
+
+   예시)
+	User.query
+		.filter_by(id=2, username="admin")    	# 아이디가 2이고, username이 "admin" -query filter
+		.all()				# all() 모든 정보			-executer
+
+============
+[p. 108 표 참조]
+ query filter - filter(), filter_by(), limit(), offset(), order_by(), group_by()
+ executer - all(), first(), first_or_404(), get(id값-레코드 구분하는 고유값), get_or_404(), count(), paginate()
+
+====================================================
+# 확인 
+executer를 사용하려면, session(session.query)을 이용해서 처리.
+deprecated됨... 사용은 가능... 
+
+[apps/crud/views.py 에서 url 동작으로 기능을 확인!!]
+
+[ 각 기능을 주석 제거 후에 console에서 확인해 보세요 ]
+
+
+views.py에 설정
+---
+... 생략 ...
+
+# SQL 테스트를 위한 endpoint 작성!
+@crud.route("/sql")
+def sql():
+    # group by('컬럼명') : 컬럼의 내용을 그룹의 묶어줌
+    # print(db.session.query(User).group_by("username").all())
+    # order by('컬럼명') : 정렬하기...
+    # print(db.session.query(User).order_by("id").all())
+    # offset(값) : 값의 위치로 이동
+    # print(db.session.query(User).limit(5).offset(5).all())
+    # limit(값) : 가져올 레코드 수를 결정
+    # print(db.session.query(User).limit(5).all())
+    # where 구(filter) : 인수에 "모델명.속성 == 값"
+    # print(
+    #     db.session.query(User).filter(User.id == 2, User.username == "사용자명").all()
+    # )
+    # where 구(fiter_by) : SQL에서 조건이 들어가는 부분
+    # print(db.session.query(User).filter_by(id=2, username="사용자명").all())
+    # 페이지네이션 객체 가져오기 : 페이지네이션은 많은 레코드를 특정 갯수로 구분하여 출력.
+    # paginate(page=None, per_page=None, error_out=True, max_per_page=None)
+    #  page : 페이지 번호, per_page : 페이지당 레코드 갯수, max_per_page : 페이지 출력할 수 있는 최대 레코드
+    # print(db.session.query(User).paginate(page=2, per_page=10, error_out=False))
+    print(User.query.paginate(page=3, per_page=5, error_out=False))
+    users = User.query.paginate(page=3, per_page=5, error_out=False)
+    print(type(users))
+    for user in users:
+        print(user)
+    # 레코드는 갯수 알아오기 : count
+    # print(db.session.query(User).count())
+    # 기본키 번호을 이용해서 가져오기 : id=3
+    # print(db.session.query(User).get(3))
+    # 하나만 가져오기
+    # print(db.session.query(User).first())
+    # 전체
+    # print(db.session.query(User).all())   # User.query.all() 같은 결과...
+
+    # db에 Insert 하기...(데이터 추가)
+    # user = User(username="사용자명", email="flaskEx14@example.com", password="password")
+    # db.session.add(user)  # sql을 실행
+    # db.session.commit()  # db에 적용.(**)
+    # db.session.add_all()
+
+    # db에 데이터 수정하기 (update)
+    # # 1) 데이터베이스에서 수정하려는 레코드를 불러옴.
+    # user = db.session.query(User).filter_by(id=2).first()
+    # # 2) 수정 작업
+    # user.username = "사용자이름수정"
+    # user.email = "flaskEx2-modify@example.com"
+    # user.password = "비밀번호2"
+    # # 3) 저장 및 적용
+    # db.session.add(user)  # 수정 내용을 추가...
+    # db.session.commit()
+
+    # # 삭제 (delete)
+    # # 1) 삭제할 데이터를 불러온다. 그리고, 삭제
+    # user = db.session.query(User).filter_by(id=4).delete()
+    # # 2) 적용
+    # db.session.commit()
+    # print(user)  # 성공시 1, 실패시 0
+
+    return "콘솔에서 확인해 주세요."
+
+---
+
+
+
+
+
+
+
+
+
+

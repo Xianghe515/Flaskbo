@@ -1,0 +1,17 @@
+{
+      "files.autoSave": "off",
+      "[python]": {
+            "editor.defaultFormatter": "ms-python.black-formatter",
+            "diffEditor.ignoreTrimWhitespace": false,
+            "editor.formatOnType": true,
+            "editor.wordBasedSuggestions": "off",
+            "editor.codeActionsOnSave": {
+                  "source.organizeImports": "explicit"
+            },
+            "editor.fontFamily": "D2Coding, monospace",
+            
+      },
+      "flake8.args": [
+            "--max-line-length=120"
+      ]
+}

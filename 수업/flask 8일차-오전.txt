@@ -1,0 +1,206 @@
+# 사용자 삭제하기
+ 1) 엔드포인트 작성
+ 2) 템플릿 작업( 편집화면에서 삭제 기능 추가)
+ 3) 동작 확인
+
+#1. 엔드포인트 작성(apps/crud/views.py)
+---views.py
+... 생략 ...
+
+# 사용자 삭제를 위한 엔드포인트 작성
+@crud.route("/users/<user_id>/delete", methods=["POST"])
+def delete_user(user_id):
+    # 삭제할 정보를 불러오기
+    user = User.query.filter_by(id=user_id).first()
+    # 삭제 처리
+    db.session.delete(user)
+    # db에 반영
+    db.session.commit()
+    return redirect(url_for("crud.users"))
+
+... 생략 ...
+---
+
+#2. 템플릿 작업( 편집화면에서 삭제 기능 추가)
+apps/crud/templates/crud/edit.html
+---edit.html
+... 생략 ...
+      <p>{{ form.submit(value='갱신') }}</p>
+    </form>
+    <!-- 삭제를 위한 기능 -->
+    <form
+      action="{{ url_for('crud.delete_user', user_id=user.id) }}"
+      method="POST"
+    >
+      {{ form.csrf_token }}
+      <input type="submit" value="삭제" />
+    </form>
+  </body>
+</html>
+
+---
+
+# 템플릿 공통화 상속... 
+이전에 수업 했음. 파일로 줌... 
+
+=================
+# config 설정
+ 앱 개발시 환경을 설정을 하는 부분(영역). 
+
+다양한 환경에 설정을 쉽게 변경하기 위해서 방법들이 존재함. 
+ - from_object(*)
+ - from_mapping(이전까지)
+ - from_envvar
+ - from_pyfile
+ - from_file
+
+# from_object를 사용
+ config 내용을 파이썬 객체로 읽어들이겠다는 의미. 
+  - 로컬환경 테스트 config 설정
+  - 실제 가동환 환경 config 설정
+
+1) config 값 설정을 위한 모듈 생성
+apps/config.py 모듈을 생성.
+---apps/config.py
+from pathlib import Path
+
+baseDir = Path(__file__).parent
+
+# BaseConfig 클래스 작성
+class BaseConfig:
+    SECRET_KEY="VXNA6hHwn5sIuPQpZLxK"
+    WTF_CSRF_SECRET_KEY="El1oD921KMdGKONsydDa"
+
+# 상황에 따른 환경 설정 작업(BaseConfig 클래스 각 상황별로 상속하여 처리)
+# Local 상황
+class LocalConfig(BaseConfig):
+    SQLALCHEMY_DATABASE_URI=f"sqlite:///{baseDir / 'local.sqlite'}"
+    SQLALCHEMY_TRACK_MODIFICATIONS=False
+    SQLALCHEMY_ECHO=True
+    
+# Testing 상황
+class TestingConfig(BaseConfig):
+    SQLALCHEMY_DATABASE_URI=f"sqlite:///{baseDir / 'testing.sqlite'}"
+    SQLALCHEMY_TRACK_MODIFICATIONS=False
+    WTF_CSRF_ENABLED = False
+
+# 실제 상황
+class DeployConfig(BaseConfig):
+    SQLALCHEMY_DATABASE_URI=f"sqlite:///{baseDir / 'deploy.sqlite'}"
+    SQLALCHEMY_TRACK_MODIFICATIONS=False
+
+# config 사전 매핑 작업 
+config = {
+    "testing": TestingConfig,
+    "local": LocalConfig,
+    "deploy": DeployConfig
+}
+
+---
+
+#2 config 로드하여 적용하기.(apps/app.py)
+--- apps/app.py
+# 경로 작업
+from pathlib import Path
+
+from flask import Flask
+
+# 마이그레이션 작업을 위해
+from flask_migrate import Migrate  # type: ignore
+
+# SQL작업을 위해
+from flask_sqlalchemy import SQLAlchemy
+
+# flask-wtf 모듈의 CSRFProtect import
+from flask_wtf.csrf import CSRFProtect  # type: ignore
+
+# config 모듈을 import
+from apps.config import config
+
+# SQLAlchemy 객체 생성
+db = SQLAlchemy()
+
+# CSRFProtect 객체 생성
+csrf = CSRFProtect()
+
+# create_app 함수 작성
+def create_app(config_key):
+    # 플라스크 인스턴스 생성
+    app = Flask(__name__)
+
+    # app에 config 설정- from_object를 이용
+    app.config.from_object(config[config_key])
+   
+    # csrf 앱 연계
+    csrf.init_app(app)
+
+    # SQLAlchemy와 앱 연계
+    db.init_app(app)
+    # Migrate와 앱 연계
+    Migrate(app, db)
+
+    # CRUD패키지로 부터 views 모듈을 import 한다.
+    # views.py 모듈은 @app.route()와 같은 맵핑 기능을 가진 모듈
+    from apps.crud import views as crud_views  # as 이후 별칭 선언
+
+    # register_blueprint() 사용해 views(crud_views) blueprint에 등록
+    # 엔드포인트 앞에 crud가 붙게 됨.
+    app.register_blueprint(crud_views.crud, url_prefix="/crud")
+
+    return app
+---
+
+.env 파일 수정
+# apps/app:create_app 을 지정
+# 디렉터리 . , 모듈안에 함수 : 
+FLASK_APP=apps.app:create_app("local")
+FLASK_DEBUG=true
+... 생략... 
+
+
+# from_envvar를 이용하는 방법
+
+#1. 환경 변수에 config 파일의 경로 정보 기술
+--- .env
+# apps/app:create_app 을 지정
+# 디렉터리 . , 모듈안에 함수 : 
+FLASK_APP=apps.app:create_app("local")
+FLASK_DEBUG=true
+# config.py의 경로 지정
+APPLICATION_SETTINGS=envconfig.py
+---
+
+#2. from_envvar로 config파일 경로를 불러오기
+--- apps/app.py
+... 생략 ... 
+    # app에 config 설정
+    app.config.from_envvar("APPLICATION_SETTINGS")
+
+... 생략 ... 
+
+#3. config 파일 설정
+---envconfig.py
+from pathlib import Path
+
+SECRET_KEY = "VXNA6hHwn5sIuPQpZLxK"
+SQLALCHEMY_DATABASE_URI = f"sqlite:///{Path(__file__).parent / 'local.sqlite'}"
+SQLALCHEMY_TRACK_MODIFICATIONS = False
+SQLALCHEMY_ECHO = True
+WTF_CSRF_SECRET_KEY = "El1oD921KMdGKONsydDa"
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

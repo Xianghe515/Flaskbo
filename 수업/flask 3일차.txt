@@ -1,0 +1,224 @@
+# url_for 함수를 이용하여 url 주소 생성하기
+
+ * url_for(endpoint, **values)
+  - endpoint : 엔드포인트 이름
+  - **values : 엔드포인트로 지정된 Rule에서 필요한 값을 키=값 형태로 추가 입력
+
+ 해당 경로로 url을 생성해서 작업할 수 있게 만들어 준다. 
+
+ * test_request_context() : 요청 테스트하는 기능을 구현한 함수. 
+                               웹의 url 정보를 전달 처리 결과를 확인할 수 있음.
+
+
+# 요청 컨텍스트 테스트 함수
+with app.test_request_context():
+    # /
+    print('주소 url_for("root") :  ', url_for("root"))  # 주소를 알아오는 함수
+    # /test
+    print('주소 url_for("putTest") : ', url_for("putTest"))
+    # hello :  /hello/test/1
+    print("hello : ", url_for("hello", name="test", out=1))
+    # hello :  /hello/test/1?page=1&age=10
+    # url_for() 사용시, 첫번째 인자는 무조건 endpoint 값을 사용하고,
+    # 이후에 있는 값들은 키=값 형태로 지정해주면 Url을 만들어 줍니다.
+    print("hello : ", url_for("hello", name="test", out=1, page=1, age=10))
+    # info 정보를 출력해보세요!!! URL(출력된 Rule) 확인
+
+===
+/hello/test/1?page=1&age=10 의미... 
+** http://127.0.0.1:5000/hello/test/1?page=1&age=10 
+ - http:// : 프로토콜
+ - 127.0.0.1 : 서버 주소. 이 위치에 도메인 정보
+ - 5000 : 서버의 포트 주소. 
+---
+ - /hello/test/1  : 애플리케이션 
+ - ?page=1&age=10 : 애플리케이션에 전달할 인자값
+  ? -> 애플리케이션과 전달값을 구분
+  & -> 전달한 값들을 구분
+
+=============================================
+# 정적파일 이용하기
+ 웹사이트는 HTML과 함께 Javascript, css 등을 이용합니다. 이때 요청 내용과 상관없이 항상 같은 내용을 출력하는 파일 있습니다. 이것을 "정적파일" 이라고 함.
+이런 정적파일들은 templates에 저장하지 않고, 별도의 공간에 저장해서 사용하게 됩니다. static이라는 엔드포인트를 사용하는 경로가 존재합니다. 해당 경로는 static 디렉터리를 가키고 있음.
+때문에 우리는 static 디렉터리를 생성하고, 정적 파일을 해당 디렉터리에 저장하여 불러서 사용할 수 있음.
+
+예로 style.css 파일을 생성해서 해당 파일에 대한 접근 테스트... 
+
+---apps/minimalapp/static/style.css
+.name {
+  color: skyblue;
+}
+---
+---apps/minimalapp/templates/index.html
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Name Template</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    {% if data["out"] %}
+    <h1 class="name">Name: {{ data["name"] }}</h1>
+    <h2>Age: {{ data["age"] }}</h2>
+    {% else %}
+    <h3>값을 출력하지 않아요</h3>
+    {% endif %}
+    <h2>for문 적용</h2>
+    <ul>
+      {% for user in datas %}
+      <li><a href="{{ user['url'] }}">{{ user['username'] }}</a></li>
+      {% endfor %}
+    </ul>
+  </body>
+</html>
+---
+
+# 애플리케이션 컨텍스트와 요청(request) 컨텍스트
+ 플라스크가 가지고 있는 Context 두가지
+
+1. 애플리케이션 컨텍스트 
+  요청을 통해서 앱 레벨의 데이터를 이용할 수 있게 만드는 것.  직접 접근하게 되면 순환참조라는 루프가 발생해서 오류가 발생할 수 있기 때문에 current_app을 통해서 접근. 접근 방식을 기억!
+애플리케이션 레벨의 데이터는 current_app( Context )와 과 g( Context )
+
+  current_app -> 액티브 앱의 인스턴스 => 실행중에 있는 액의 객체의 정보를 담는 Context
+  g              -> 요청을 통해 이용할 수 있는 전역 임시(일시)영역. 요청시마다 리셋 
+
+current_app 접근 방식은 
+ 1. 현재 구동 중에 있는 app의 context를 얻어서
+ctx = app.app_context()  # 현재 동작 중인 app의 context를 ctx라는 변수에 저장
+
+ 2. 스택 메모리에 로드하여 접근할 수 있게 만듬
+ctx.push()  # stack에 저장.
+
+ 3. 이후에 current_app을 통해서 접근
+
+--- apps/minimalapp/app.py
+from flask import Flask, render_template, url_for, current_app, g  # current_app, g을 추가 임포트 한다.
+
+app = Flask(__name__)
+
+... 생략 ... 
+
+# 여기에서 호출하면 오류가 됨
+#print(current_app)   # 직접 접근 X
+
+# 애플리케이션 Context를 취득하여 stack영역에 push
+ctx = app.app_context()  # 현재 동작 중인 app의 context를 ctx라는 변수에 저장
+ctx.push()  # stack에 저장.
+
+# current_app에 접근할 수 있게 됩니다.
+print(current_app.name)
+# >> apps.minimalapp.app
+
+# 전역 임시 영역에 값을 설정한다. (g를 사용하기 위해서는 먼저 current_app이 로드되어야함)
+g.connection = "connection"   # connection 문자열 객체 대신에 다른 값을 넣어 사용할 수 있음
+# connection 정보를 사용하는 내용은 DB접근 정보와 같은 내용을 사용하여 쓰게 됨. 
+# 매번 새롭게 만들 필요가 없이 이미 있는 정보를 사용할 수 있게 하기 위해서... 
+print(g.connection)
+# >> connection
+---
+
+요청 컨덱스트 
+요청 컨텍스트는 요청에 대한 요청 레벨에서의 처리하여 이용할 수 있게 한 것으로, request와 session이 있습니다. 이를 테스트하기 위해서 test_request_context()를 사용해봅니다. 
+
+--- apps/minimalapp/app.py
+# request를 추가로 import 합니다. 
+from flask import Flask, render_template, url_for, current_app, g, request 
+
+app = Flask(__name__)
+
+...(생략)...
+
+print("요청 컨텍스트 테스트")
+with app.test_request_context("/users?updated=true&test=test입니다."):
+    # 테스트 결과 출력
+    print(request.args.get("updated"))     # 쿼리 스트링의 updated 키의 값
+    print(request.args.get("test"))	# 쿼리 스트링의 test키의 값 
+    print(request.args)		
+    # args 내에 있는 값 : ImmutableMultiDict([('updated', 'true'), ('test', 'test입니다.')])
+
+---
+------
+# 문의 폼을 이용한 데이터 처리
+
+PRG 패턴 (POST - REDIRECT - GET)
+ - post방식(HTTP메서드) : 정보 요청시 데이터를 전달해서 동작 내용을  얻고자 하는 경우... (GET방식)
+ - redirect : 다른 url로 경로 전환
+ - get방식 : 정해진 정보를 얻고자하는 경우에 주소 사용. 
+왜? 사용할까... 리로드 시에 전송된 POST 콘텐츠가 재전송되어 폼 데이터가 이중으로 전송될 수 있기 때문에...
+
+ 1. 폼 화면 만들기... 접속(GET방식)
+ 2. 문의 내용을 전송하기(POST방식) -> 이메일 발송 작업 진행.
+ 3. 문의 완료 화면으로 리다이렉트(REDIRECT)
+ 4. 문의 완료 화면을 표시(GET방식)
+ 
+문의 요청에 대한 경로 정보... 
+엔드포인트  	메서드    		룰(Rule)
+ contact      	GET        	/contact      	=> 폼 화면 띄워주는 
+ contact_complete	POST, GET	/contact_complete	=> 데이터 처리와 완료 페이지 전송
+
+---
+대표적인 요청 객체의 속성 또는 메서드
+ method		HTTP 요청 메서드
+ form		요청 폼
+ args		쿼리 파라미터
+ cookies		요청 쿠키
+ files		요청 파일
+ envsion		환경 변수
+ headers		요청 헤더
+ referrer		요청 리퍼러(링크 참조 페이지) - 이전페이지 정보
+ query_string	요청 궈리 문자열 - ? 다음에 나오는 키=값 형태의 파라미터들... 
+ Scheme		요청 프로토콜(http/https)
+ url		요청 url
+
+# 문의 폼의 엔드포인트 만들기... 
+@app.route()
+def xxxx():
+   ~~~
+
+--- apps/minimalapp/app.py
+... 생략 ... 
+
+# 폼 태그 정보를 가지고 있는 페이지
+@app.route("/contact")
+def contact():
+    return render_template("contact.html")  # templates내에 contact.html
+
+
+# GET, POST 방식에 따라서 다른 동작을 처리하는 메서드
+@app.route("/contact_complete", methods=["GET", "POST"])
+def contact_complete():
+    if request.method == "POST":
+        # 이메일을 발송하기 위한 작업 진행
+
+        # 리다이렉트 처리
+        return redirect(url_for("contact_complete"))
+
+    return render_template("contact_complete.html")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

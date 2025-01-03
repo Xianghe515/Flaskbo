@@ -1,0 +1,434 @@
+# Flash 메시지(flash함수)
+유효성 검증.... 
+  입력값이 제대로 처리할 수 있는 데이터인지 확인! (클라이언트, 서버, 둘다)
+  
+  get_flashed_message 템플릿에서 flash 메시지를 읽을 수 있음. 
+ 
+동작을 위해서 config 설정이  필요함. 세션을 필요로 하기 때문에 설정이 필요함. 
+세션을 설정(사용)하기 위해서 SECRET_KEY가 필요함... 
+SECRET_KEY는 난수를 사용해요... 
+===========================
+난수 생성 코드
+import random
+import String
+
+// source 생성
+string_pool = String.ascii_letters + String.digits
+
+// SECRETKEY
+result = ""
+for i in range(20):
+    result += random.choice(string_pool)
+print(result)
+
+===========================
+# SECRET_KEY 추가 - session을 위해서 필요함
+app.config['SECRET_KEY'] = 'VXNA6hHwn5sIuPQpZLxK'
+
+** POST 로 넘어온 데이터를 검증(체크)
+이메일 형식 체크를 진행... email-validator 패키지를 통해서 구현.
+
+pip install email-validator
+
+---- 이메일 검증 코드 : app.py
+from email-validator import EmailNotValidError, validate_email
+
+# Flask 클래스를 import
+from flask import (
+    Flask,
+    current_app,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+
+... 생략 ... 
+
+
+@app.route("/contact_complete", methods=["GET", "POST"])
+def contact_complete():
+    if request.method == "POST":
+        # request 전달된 값 처리 : form태그로 부터 전달받은 값
+        username = request.form["username"]
+        email = request.form.get("email")
+        description = request.form.get("description")
+        # print("username : ", username)
+        # print("email : ", email)
+        # print("description : ", description)
+
+        # 검증 확인...
+        is_valid = True
+        if not username:
+            flash("사용자명은 필수입니다.")
+            is_valid = False
+        if not email:
+            flash("메일 주소는 필수입니다.")
+            is_valid = False
+
+        # 이메일 형식 검증
+        try:
+            validate_email(email)
+        except EmailNotValidError:
+            flash("메일 주소 형식으로 입력해 주세요")
+            is_valid = False
+        if not description:
+            flash("문의 내용은 필수입니다.")
+            is_valid = False
+
+        # 검증이 실패한 경우 is_valid = False -> 문의 폼으로 되돌림
+        if not is_valid:
+            return redirect("contact")
+
+        # 이메일을 발송하기 위한 작업 진행
+
+        # 리다이렉트 처리
+        return redirect(url_for("contact_complete"))
+
+    return render_template("contact_complete.html")
+
+----> 템플릿에 수정... contact.html
+<!DOCTYPE >
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>문의 폼</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <h2>문의 폼</h2>
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <ul>
+        {% for message in messages %}
+        <li class='flash'>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% endwith %}
+    <form
+      action="{{ url_for('contact_complete') }}"
+      method="POST"
+      novalidate="novalidate"
+    >
+      <table>
+        <tr>
+          <td>사용자명</td>
+          <td>
+            <input
+              type="text"
+              name="username"
+              value="{{
+              username
+              }}"
+              placeholder="사용자명"
+            />
+          </td>
+        </tr>
+        <tr>
+          <td>메일 주소</td>
+          <td>
+            <input
+              type="text"
+              name="email"
+              value="{{
+                email
+                }}"
+              placeholder="이메일"
+            />
+          </td>
+        </tr>
+        <tr>
+          <td>문의 내용</td>
+          <td>
+            <textarea name="description" placeholder="문의내용">
+{{ description }}</textarea
+            >
+          </td>
+        </tr>
+      </table>
+      <input type="submit" value="문의" />
+    </form>
+  </body>
+</html>
+
+
+=======
+# 로깅
+개발시 혹은 운영시에 예기치 못한 오류가 발생하는 경우, 무슨일이 생겼는지 확인해야 할 필요가 있습니다. 
+동작 내용을 기록 또는 출력하는 것을 말함. 
+
+로그 레벨
+- CRITICAL - 치명적 오류 (프로그램의 이상 종료를 수반하는 것과 같은 오류 정보)
+- ERROR - 오류 (예기치 못한 실행 시 오류 정보)
+- WARNING - 경고 (오류에 가까운 현상 또는 준정상계(abnormal)정보
+- INFO - 정보 ( 정상 동작의 확인이 필요한 경우 정보)
+- DEBUG - 디버그 정보(상세 정보) (개발시 필요한 정보)
+
+로그는 개발시(DEBUG)와 배포시(WARNING 이상) 로그 레벨 조정하는 것이 좋음. 
+
+플라스크에서 사용하는 표준  모듈로 logging을 사용함.
+(https://docs.python.org/3/library/logging.html#module-logging)
+로그레벨은 app.py 에서 지정함. 
+app.logger.setLevel()이 로그 레벨 지정함수
+
+--- app.py
+# logging을 import
+import logging
+
+... 생략 ...
+
+# SECRET_KEY 추가 - session을 위해서 필요함
+app.config["SECRET_KEY"] = "VXNA6hHwn5sIuPQpZLxK"
+
+# 로그 레벨 설정
+app.logger.setLevel(logging.DEBUG)
+
+# 로그 출력을 위해 다음과 같이 지정
+app.logger.critical("fatal error")
+app.logger.error("error")
+app.logger.warning("warning")
+app.logger.info("info")
+app.logger.debug("debug")
+
+=====
+flask-debugtoolbar  사용하기... 
+: HTTP요청,  flask routes,  데이터베이스의 SQL 등등을 브라우저에서 확인하게 해주는 tool
+
+설치 
+pip install flask-debugtoolbar
+
+app.py 수정
+... 생략 ...
+# DebugToolbarExtension 확장 import
+from flask_debugtoolbar import DebugToolbarExtension
+
+... 생략 ...
+# 로그 레벨 설정
+app.logger.setLevel(logging.DEBUG)
+
+# 리다이렉트 중단 하지 않게 설정
+app.config["DEBUG_TB_INTERCEPT_REDIRECTS"] = False
+# debugtoolbar 연동 처리..
+toolbar = DebugToolbarExtension(app)
+
+... 생략 ...
+
+==================================
+# 이메일 발송 작업 
+
+1. 메일 작업하는 패키지를 설치
+pip install flask-mail
+
+2. config 설정
+gmail을 이용한 메일 서비스... 
+- 기본적인 flask-mail의 설정
+ MAIL_SERVER
+ MAIL_PORT
+ MAIL_USE_TLS
+ MAIL_USE_SSL
+ MAIL_DEBUG
+ MAIL_USERNAME
+ MAIL_PASSWORD   => 앱 비밀번호... 
+ MAIL_DEFAULT_SENDER
+
+3. app.py 모듈에 메일 발송 기능 적용
+... 생략 ... 
+# flask-mail의 Mail 클래스 import
+from flask_mail import Mail, Message
+... 생략
+
+app.config["MAIL_SERVER"] = "smtp.gmail.com"
+app.config["MAIL_PORT"] = os.environ.get("MAIL_PORT")
+app.config["MAIL_USE_TLS"] = os.environ.get("MAIL_USE_TLS")
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+app.config["MAIL_DEFAULT_SENDER"] = os.environ.get("MAIL_DEFAULT_SENDER")
+
+# flask-mail 확장에 등록(연동)
+mail = Mail(app)
+
+... 생략 ... 
+
+@app.route("/contact_complete", methods=["GET", "POST"])
+def contact_complete():
+    if request.method == "POST":
+        # request 전달된 값 처리 : form태그로 부터 전달받은 값
+        username = request.form["username"]
+        email = request.form.get("email")
+        description = request.form.get("description")
+        # print("username : ", username)
+        # print("email : ", email)
+        # print("description : ", description)
+
+        # 검증 확인...
+        is_valid = True
+        if not username:
+            flash("사용자명은 필수입니다.")
+            is_valid = False
+        if not email:
+            flash("메일 주소는 필수입니다.")
+            is_valid = False
+
+        # 이메일 형식 검증
+        try:
+            validate_email(email)
+        except EmailNotValidError:
+            flash("메일 주소 형식으로 입력해 주세요")
+            is_valid = False
+        if not description:
+            flash("문의 내용은 필수입니다.")
+            is_valid = False
+
+        # 검증이 실패한 경우 is_valid = False -> 문의 폼으로 되돌림
+        if not is_valid:
+            app.logger.warning("입력값 검증에 실패입니다.")
+            return redirect("contact")
+
+        # 이메일을 발송하기 위한 작업 진행
+        send_email(
+            email,
+            "문의 감사합니다.",
+            "contact_mail",
+            username=username,
+            description=description,
+        )
+
+        # 리다이렉트 처리
+        flash("문의해 주셔서 감사합니다.")
+        app.logger.info("정상적으로 문의메일를 발송했습니다.")
+        return redirect(url_for("contact_complete"))
+
+    return render_template("contact_complete.html")
+
+
+# 메일 발송과 과련된 함수
+def send_email(to, subject, template, **kwargs):
+    """메일을 송신하는 함수"""
+    msg = Message(subject, recipients=[to])
+    msg.body = render_template(template + ".txt", **kwargs)
+    msg.html = render_template(template + ".html", **kwargs)
+    mail.send(msg)
+
+
+===========================================
+# Cookie와 Session 중요함... 
+
+# 응답 (response)
+응답은 브라우저로부터 온 요청에 대한 서버가 클라이언트에게 반환하는 내용
+
+함수에 return에... return render_template('contact_complete.html')
+와 같은 방식으로 필요한 정보를 전달했습니다. 
+추가로 정보를 설정할 수 있음... cookie 값 설정등 추가 정보를 갱신하는 경우 사용하는 메서드
+make_response() **
+
+http response 헤더에는 
+첫줄에 status_code 문자열(상태) http버전
+status_code 지금 요청에 대한 결과를 노출 
+ - 200번대 - 성공, 완료
+ - 300번대 - 리다이렉트
+ - 400번대 - 클라이언트 오류
+ - 500번대 - 서버 오류
+* header : 응답헤더... 
+* set_cookie : 서버가 SessionID값과 같이 클라이언트에게 전달할 내용을 설정
+* delete_cookie : 쿠키를 삭제. 
+
+--- apps/minimalapp/app.py
+# 추가 
+from flask from flask import (
+    Flask,
+    current_app,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    url_for,
+    make_response,   	# 추가
+    session,		# 추가
+) 
+
+... 생략 ...
+@app.route("/contact")
+def contact():
+    session["username"] = "testuser"
+    # 응답 객체 생성
+    response = make_response(
+        render_template("contact.html", username=session["username"])
+    )
+
+    # 쿠키 설정
+    response.set_cookie("flaskbook_key", "flaskbook_value")
+
+    # 세션 설정
+    session["username"] = "testuser"
+
+    # return render_template("contact.html")  # templates내에 contact.html
+    return response
+
+============================================
+debugtoolbar에서 세션과 쿠키값 확인
+
+=====
+## 템플릿의 공통화와 상속
+비슷한 유형의 템플릿이 있는 경우, 
+1. 해당 공통의 부분을 별도 템플릿으로 구성
+2. 각 개별 템플릿에 공통 템플릿을 상속
+3. 각 개별 템플릿의 각각의 구현 템플릿 내용을 작성... 
+
+# 공통화 템플릿(base.html)
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- title을 상속해서 구현하는 구간 -->
+    <title>{% block title %}{% endblock %}</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+  <body>
+    <!-- content를 상속하는 곳에서 구현 -->
+    {% block content %}{% endblock %}
+  </body>
+</html>
+
+# 각 개별 템플릿(index.html)
+{% extends "base.html" %} 
+{% block title %}Name Template{% endblock %}
+{% block content %}
+  {% if data["out"] %}
+  <h1 class="name">Name: {{ data["name"] }}</h1>
+  <h2>Age: {{ data["age"] }}</h2>
+  {% else %}
+  <h3>값을 출력하지 않아요</h3>
+  {% endif %}
+  <h2>for문 적용</h2>
+  <ul>
+    {% for user in datas %}
+    <li><a href="{{ user['url'] }}">{{ user['username'] }}</a></li>
+    {% endfor %}
+  </ul>
+{% endblock %}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
